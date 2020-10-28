@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -34,8 +35,8 @@ class MyApp extends StatelessWidget {
 class MyHomePage extends StatefulWidget {
   MyHomePage({Key key, this.title}) : super(key: key);
 
-  LatLng fromPoint = LatLng(-20.345582, -40.426052);
-  LatLng endPoint = LatLng(-20.342634, -40.400520);
+  LatLng fromPoint = LatLng(0, 0);
+  LatLng endPoint = LatLng(0, 0);
   final String title;
 
   @override
@@ -48,15 +49,20 @@ class _MyHomePageState extends State<MyHomePage> {
   double longitudeData = 0;
   Set<Marker> tmp = Set<Marker>();
   DirectionProvider apiProvider;
+  bool init = true;
+  bool mapHasCreated = false;
 
   @override
   void initState() {
     super.initState();
-
     getCurrentLocation();
+
+    Timer.periodic(new Duration(seconds: 1), (timer) {
+      getCurrentLocation(realTime: true);
+    });
   }
 
-  Future getCurrentLocation() async {
+  Future getCurrentLocation({bool realTime: false}) async {
     Position geoposition =
         await getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
 
@@ -64,68 +70,77 @@ class _MyHomePageState extends State<MyHomePage> {
       latitudeData = geoposition.latitude;
       longitudeData = geoposition.longitude;
     });
-    print("LOCATION $geoposition");
+    // _centerView(oneMark: true, pos: LatLng(latitudeData, longitudeData));
+
+    if (realTime) {
+      print('realTime');
+      _createMarkers(Marker(
+        markerId: MarkerId('My locations'),
+        position: LatLng(geoposition.latitude, geoposition.longitude),
+      ));
+    }
+    if (init) {
+      print('init');
+      setState(() {
+        init = false;
+        _centerView(oneMark: true, pos: LatLng(latitudeData, longitudeData));
+      });
+    }
   }
 
   @override
   Widget build(BuildContext contex) {
     Size size = MediaQuery.of(context).size;
     return Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title),
-        ),
-        body: Container(
-          height: size.height,
-          child: Stack(
-            children: [
-              buildMap(),
-              Positioned(
-                width: size.width * .7,
-                child: Container(
-                  padding: EdgeInsets.fromLTRB(10, 0, 10, 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.all(
-                      Radius.circular(20),
-                    ),
+      body: Container(
+        height: size.height,
+        child: Stack(
+          alignment: AlignmentDirectional.bottomEnd,
+          children: <Widget>[
+            buildMap(),
+            DraggableScrollableSheet(
+              maxChildSize: 1,
+              initialChildSize: 0.97,
+              minChildSize: 0.03,
+              builder:
+                  (BuildContext context, ScrollController scrollController) {
+                return SingleChildScrollView(
+                  controller: scrollController,
+                  child: Container(
+                    height: MediaQuery.of(context).size.height,
                     color: Colors.white,
+                    child: Text("$latitudeData -- $longitudeData"),
                   ),
-                  child: TextField(
-                    onSubmitted: searchEddress,
-                    autocorrect: true,
-                    decoration: InputDecoration(
-                      labelText: 'Search',
-                    ),
-                  ),
-                ),
-                left: 50,
-                top: 30.0,
-              ),
-            ],
-          ),
+                );
+              },
+            ),
+          ],
         ),
-        floatingActionButton: Container(
-          width: double.infinity,
-          padding: EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FloatingActionButton(
-                onPressed: _centerView,
-                child: Icon(
-                  Icons.zoom_out_map,
-                ),
+      ),
+      floatingActionButton: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FloatingActionButton(
+              onPressed: _centerView,
+              child: Icon(
+                Icons.zoom_out_map,
               ),
-              FloatingActionButton(
-                onPressed: () => _centerView(
-                    oneMark: true, pos: LatLng(latitudeData, longitudeData)),
-                child: Icon(
-                  Icons.my_location,
-                ),
+            ),
+            FloatingActionButton(
+              onPressed: () => _centerView(
+                  oneMark: true, pos: LatLng(latitudeData, longitudeData)),
+              child: Icon(
+                Icons.my_location,
               ),
-            ],
-          ),
-        ));
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Consumer<DirectionProvider> buildMap() {
@@ -142,10 +157,8 @@ class _MyHomePageState extends State<MyHomePage> {
         return Container(
           height: MediaQuery.of(ctx).size.height,
           child: GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: widget.fromPoint,
-              zoom: 15,
-            ),
+            initialCameraPosition:
+                CameraPosition(target: widget.fromPoint, zoom: 15, bearing: 0),
             markers: tmp,
             onMapCreated: (GoogleMapController _googleControler) =>
                 _onMapCreated(_googleControler, api),
@@ -164,14 +177,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
   static CameraPosition _kLake(LatLng position) {
     return CameraPosition(
-        bearing: 192.8334901395799,
-        target: position,
-        tilt: 0,
-        zoom: 19.151926040649414);
+        bearing: 0, target: position, tilt: 0, zoom: 19.151926040649414);
   }
 
   Future<void> searchEddress(String eddress) async {
-    print("Edressss $eddress");
     List<geo.Location> locations = await locationFromAddress("$eddress");
     setState(() {
       apiProvider.findDirections(LatLng(latitudeData, longitudeData),
@@ -179,33 +188,38 @@ class _MyHomePageState extends State<MyHomePage> {
       widget.fromPoint = LatLng(latitudeData, longitudeData);
       widget.endPoint = LatLng(locations[0].latitude, locations[0].longitude);
     });
-    print("daskndasonidansndsanas $locations");
-    _centerView();
   }
 
   void _centerView({bool oneMark: false, LatLng pos}) async {
-    await _controller.getVisibleRegion();
-    if (!oneMark) {
-      double left = min(widget.fromPoint.latitude, widget.endPoint.latitude);
-      double right = max(widget.fromPoint.latitude, widget.endPoint.latitude);
-      double top = max(widget.fromPoint.longitude, widget.endPoint.longitude);
-      double bottom =
-          min(widget.fromPoint.longitude, widget.endPoint.longitude);
-      LatLngBounds bounds = LatLngBounds(
-        southwest: LatLng(left, bottom),
-        northeast: LatLng(right, top),
-      );
-      var cameraUpdate = CameraUpdate.newLatLngBounds(bounds, 50);
-      _controller.animateCamera(cameraUpdate);
-    } else {
-      getCurrentLocation().then((value) {
-        var cameraUpdate = CameraUpdate.newCameraPosition(_kLake(pos));
+    print('center');
+    if (mapHasCreated) {
+      await _controller.getVisibleRegion();
+      if (!oneMark) {
+        print('moreMarks');
+        double left = min(widget.fromPoint.latitude, widget.endPoint.latitude);
+        double right = max(widget.fromPoint.latitude, widget.endPoint.latitude);
+        double top = max(widget.fromPoint.longitude, widget.endPoint.longitude);
+        double bottom =
+            min(widget.fromPoint.longitude, widget.endPoint.longitude);
+        LatLngBounds bounds = LatLngBounds(
+          southwest: LatLng(left, bottom),
+          northeast: LatLng(right, top),
+        );
+        var cameraUpdate = CameraUpdate.newLatLngBounds(bounds, 50);
         _controller.animateCamera(cameraUpdate);
-        _createMarkers(Marker(
-          markerId: MarkerId('My locations'),
-          position: pos,
-        ));
-      });
+      } else {
+        getCurrentLocation().then((value) {
+          var cameraUpdate = CameraUpdate.newCameraPosition(_kLake(pos));
+          _controller.animateCamera(cameraUpdate);
+          _createMarkers(Marker(
+            markerId: MarkerId('My locations'),
+            position: pos,
+          ));
+          print('oneeee');
+        }).catchError((err) {
+          print('erro');
+        });
+      }
     }
   }
 
@@ -213,8 +227,9 @@ class _MyHomePageState extends State<MyHomePage> {
     // api.findDirections(fromPoint, endPoint);
     setState(() {
       _controller = controller;
-      // _centerView();
+      mapHasCreated = true;
     });
+    _centerView(oneMark: true, pos: LatLng(latitudeData, longitudeData));
   }
 
   placemarkFromCoordinates(double d, double e) {}
